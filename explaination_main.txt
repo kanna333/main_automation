@@ -1,0 +1,202 @@
+1. Script Metadata
+
+#!/bin/bash → ensures the script runs with Bash shell.
+
+---
+2. Input Check
+
+"if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <app_name> <version>"
+    exit 1
+fi "
+
+"$#" = number of arguments passed to the script.
+
+-ne 2 means "not equal to 2".
+
+$0 in Bash
+
+$0 → always refers to the name of the script itself (the way you invoked it).
+
+$1, $2, … → first, second, etc. arguments.
+
+$# → number of arguments.
+
+---
+3. Parameters & Variables
+
+APP_NAME=$1                # First argument → app name
+DOCKER_IMAGE_TAG=$2        # Second argument → version
+
+GIT_REPO_URL="https://github.com/kanna333/main_automation.git" → repo to pull code from.
+
+REPO_NAME="main_automation" → directory name after cloning.
+
+DOCKER_IMAGE_NAME="73333/$APP_NAME" → Docker image will be tagged like 73333/my-app.
+
+DEPLOYMENT_YAML_PATH="./deployment.yaml" → Kubernetes deployment manifest.
+
+SERVICE_YAML_PATH="./service.yaml" → Kubernetes service manifest.
+
+CONTAINER_NAME="$APP_NAME-container" → matches the container name in deployment.yaml.
+
+---
+4. Clone Repo
+
+"if [ ! -d "$REPO_NAME" ]; then
+    git clone $GIT_REPO_URL
+else
+    echo "Repo already exists, skipping clone."
+fi "
+
+
+-d → checks if a directory exists.
+
+! → means NOT.
+
+So [ ! -d "$REPO_NAME" ] means:
+
+“If the directory named $REPO_NAME does not exist…”
+
+fi
+
+Marks the end of the if-statement.
+
+---
+5. Build & Push Docker Image
+
+cd $REPO_NAME || { echo "Repo directory not found"; exit 1; }
+
+cd $REPO_NAME → tries to enter the repo folder (e.g. main_automation).
+
+|| means “OR if the previous command fails”.
+
+{ echo "Repo directory not found"; exit 1; } → runs if cd fails.
+
+---
+
+
+docker build -t $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG .
+
+
+From your script: this command "$DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG" expands to something like:
+
+DOCKER_IMAGE_NAME="73333/$APP_NAME"
+DOCKER_IMAGE_TAG=$2
+
+73333/my-app:2.2.0
+
+---
+
+Push Docker Image:
+
+docker push $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG
+
+docker push 73333/my-app:2.2.0
+
+You’re logged in (docker login)
+
+Repo 73333/my-app exists
+
+----
+cd ..
+
+After building & pushing, moves back one directory.
+
+Ensures later parts of the script (like editing deployment.yaml) run in the original working directory, not inside the repo folder.
+
+---
+6. Update Kubernetes Deployment File
+
+"if [ -f "$DEPLOYMENT_YAML_PATH" ]; then
+    sed -i.bak "/name: $CONTAINER_NAME/{n;s|image:.*|image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG|}" $DEPLOYMENT_YAML_PATH
+else
+    echo "Error: $DEPLOYMENT_YAML_PATH not found!"
+    exit 1
+fi"
+
+
+if [ -f "$DEPLOYMENT_YAML_PATH" ]; then
+
+-f → checks if the file exists and is a regular file.
+
+$DEPLOYMENT_YAML_PATH = ./deployment.yaml (from earlier in script).
+
+So: “If deployment.yaml exists, proceed…”
+
+If not → print error and exit.
+
+
+
+sed -i.bak "/name: $CONTAINER_NAME/{n;s|image:.*|image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG|}" $DEPLOYMENT_YAML_PATH
+
+
+"-i.bak"
+
+Edits the file in place.
+
+Creates a backup copy named deployment.yaml.bak (before changes).
+
+"/name: $CONTAINER_NAME/" Looks for a line that matches:
+
+name: my-app-container
+
+"{n; ... }"
+
+After finding the match, n tells sed to move to the next line.
+
+In your YAML, that next line is the image: line.
+
+Example:
+
+- name: my-app-container   <-- sed finds this
+  image: 73333/my-app:1.0.1  <-- sed moves to this line
+
+
+"s|image:.*|image: $DOCKER_IMAGE_NAME:$DOCKER_IMAGE_TAG|"
+
+s|…|…| = substitution (like s/old/new/).
+
+image:.* = matches the whole image: line.
+
+Replaces it with:
+
+image: 73333/my-app:2.2.0 (whatever your new image name + tag is).
+
+"$"DEPLOYMENT_YAML_PATH"
+
+Tells sed which file to edit (deployment.yaml).
+
+---
+
+7: Deploy to Kubernetes:
+
+"kubectl apply -f $DEPLOYMENT_YAML_PATH"
+
+Applies updated deployment manifest.
+
+If deployment already exists → it will update (rolling update).
+
+If not → it creates new one.
+
+---
+
+8. Apply Service (if exists)
+
+"if [ -f "$SERVICE_YAML_PATH" ]; then
+    kubectl apply -f $SERVICE_YAML_PATH
+fi"
+
+If service.yaml exists, apply it (exposes the app).
+
+If not, skip silently.
+
+---
+
+9. Success Message:
+
+echo "Deployment of $APP_NAME:$DOCKER_IMAGE_TAG completed successfully!"
+
+Deployment of my-app:2.2.0 completed successfully!
+
+

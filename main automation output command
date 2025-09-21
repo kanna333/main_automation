@@ -1,0 +1,4 @@
+minikube start
+bash main_automation.sh my-app 1.0.0
+
+minikube service my-app-service   -> to check output
